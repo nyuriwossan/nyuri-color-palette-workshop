@@ -301,6 +301,36 @@ test('プリセット: 名前の重複・同じ配色の重複・プリセット
   for (const p of PRESETS) assert.equal(new Set(p.colors.map((c) => c[0])).size, p.colors.length, p.name);
 });
 
+// 見た目の色差（CIE76 ΔE）。sRGB → Lab（D65）
+function deltaE(a, b) {
+  const lab = (hex) => {
+    const { r, g, b: bl } = hexToRgb(hex);
+    const f = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const R = f(r), G = f(g), B = f(bl);
+    const t = (v) => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116);
+    const X = t((R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047), Y = t(R * 0.2126 + G * 0.7152 + B * 0.0722), Z = t((R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883);
+    return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
+  };
+  const A = lab(a), B = lab(b);
+  return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]);
+}
+
+test('プリセット: 見分けがつかないほど似た配色の組がない（同じ位置どうしの平均ΔE 8以上）', () => {
+  for (let i = 0; i < PRESETS.length; i++) {
+    for (let j = i + 1; j < PRESETS.length; j++) {
+      const a = PRESETS[i].colors.map((c) => c[0]), b = PRESETS[j].colors.map((c) => c[0]);
+      if (a.length !== b.length) continue;
+      const avg = a.reduce((s, h, k) => s + deltaE(h, b[k]), 0) / a.length;
+      assert.ok(avg >= 8, `${PRESETS[i].name} と ${PRESETS[j].name} が似すぎ（平均ΔE ${avg.toFixed(1)}）`);
+    }
+  }
+});
+
+test('プリセット: 月蝕の聖女は4色目を赤銅色に変更済み（堕天使の告解との区別）', () => {
+  const p = PRESETS.find((x) => x.name === '月蝕の聖女');
+  assert.deepEqual(p.colors, [['#101729', 30], ['#343658', 25], ['#77769D', 20], ['#B0573E', 15], ['#E7E4DF', 10]]);
+});
+
 test('プリセット: 追加分の配色・比率が指定どおり（抜き取り）', () => {
   const get = (n) => PRESETS.find((p) => p.name === n);
   assert.deepEqual(get('白磁の戴冠').colors, [['#FAF7ED', 35], ['#DFD7C8', 25], ['#BC9F62', 20], ['#756044', 12], ['#252C38', 8]]);
