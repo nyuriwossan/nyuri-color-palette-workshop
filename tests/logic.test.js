@@ -6,7 +6,7 @@ import { distribute, isValidRatios, equalize, sanitize, setRatio, maxRatio, addR
 import { HARMONY_MODES, generateHarmony, applyHarmony, VARIATIONS, applyVariation } from '../js/harmony.js';
 import { createPalette, validateImport, parseImportText, serializePalette, checkInvariants, duplicatePalette } from '../js/palette.js';
 import { PRESETS } from '../js/presets.js';
-import { toText, safeFileName, toHexPrompt, hexPromptColors } from '../js/exporter.js';
+import { toText, safeFileName, toHexPrompt, hexPromptColors, buildHexPrompt, HEX_PROMPT_MODES } from '../js/exporter.js';
 import { createStore } from '../js/storage.js';
 import { MAX_COLORS, SCOPE_KEYS } from '../js/config.js';
 
@@ -516,4 +516,112 @@ test('HEX配色プロンプト: 10色・全プリセットで形式が崩れな�
   const t = toHexPrompt(p, 'overall');
   assert.equal(t.split(', ').length, 10);
   assert.match(t, HEX_PROMPT_RE);
+});
+
+/* ---------- HEX配色プロンプト：3つの出力方式 ---------- */
+
+function samplePalette() {
+  const p = createPalette();
+  const set = (k, hexes) => { p.scopes[k].enabled = true; p.scopes[k].colors = hexes.map((hex, i) => ({ id: k + i, hex, ratio: i === 0 ? 100 - (hexes.length - 1) * 10 : 10 })); };
+  set('overall', ['#F3E7E0', '#A9B4C6']);
+  set('character', ['#CC7F93', '#533147']);
+  set('background', ['#142B29', '#70A996']);
+  return p;
+}
+const LINE_RE = /^(overall color scheme|character palette|background palette): #[0-9A-F]{6}(, #[0-9A-F]{6})*$/;
+
+test('出力方式は3つ（HEXのみ・人物＋背景・全体＋人物＋背景）', () => {
+  assert.deepEqual(HEX_PROMPT_MODES.map((m) => m.key), ['hex', 'cb', 'ocb']);
+});
+
+test('① HEXのみ: 既存の toHexPrompt と完全に同じ出力（互換性）', () => {
+  const p = samplePalette();
+  for (const k of SCOPE_KEYS) {
+    const r = buildHexPrompt(p, 'hex', k);
+    assert.equal(r.text, toHexPrompt(p, k));
+    assert.deepEqual(r.targets, [k]);
+  }
+  assert.equal(buildHexPrompt(p, 'hex', 'character').text, '#CC7F93, #533147');
+  p.scopes.background.enabled = false;
+  assert.equal(buildHexPrompt(p, 'hex', 'background').text, '');
+  assert.equal(buildHexPrompt(p, 'hex', '__proto__').text, '');
+  assert.equal(buildHexPrompt(p, 'hex').text, '');
+  // 未知の方式は HEXのみ 扱い
+  assert.equal(buildHexPrompt(p, 'unknown', 'overall').text, '#F3E7E0, #A9B4C6');
+});
+
+test('② 人物＋背景: 仕様どおりの2行・Overallを含めない', () => {
+  const r = buildHexPrompt(samplePalette(), 'cb');
+  assert.equal(r.text, 'character palette: #CC7F93, #533147\nbackground palette: #142B29, #70A996');
+  assert.ok(!r.text.includes('overall') && !r.text.includes('#F3E7E0'));
+  assert.deepEqual(r.skipped, []);
+});
+
+test('③ 全体＋人物＋背景: 仕様どおりの3行・この順番', () => {
+  const r = buildHexPrompt(samplePalette(), 'ocb');
+  assert.equal(r.text, 'overall color scheme: #F3E7E0, #A9B4C6\ncharacter palette: #CC7F93, #533147\nbackground palette: #142B29, #70A996');
+  r.text.split('\n').forEach((line) => assert.match(line, LINE_RE));
+});
+
+test('ラベル付き: 出力しない系統は行ごと外し、外した系統を返す', () => {
+  const p = samplePalette();
+  p.scopes.character.enabled = false;
+  let r = buildHexPrompt(p, 'cb');
+  assert.equal(r.text, 'background palette: #142B29, #70A996');
+  assert.deepEqual(r.skipped, ['character']);
+  r = buildHexPrompt(p, 'ocb');
+  assert.equal(r.text, 'overall color scheme: #F3E7E0, #A9B4C6\nbackground palette: #142B29, #70A996');
+  assert.deepEqual(r.skipped, ['character']);
+  p.scopes.overall.enabled = false;
+  assert.equal(buildHexPrompt(p, 'ocb').text, 'background palette: #142B29, #70A996');
+});
+
+test('ラベル付き: 全部無効なら空文字（空の行・ラベルだけの行・余分なカンマを出さない）', () => {
+  const p = samplePalette();
+  for (const k of SCOPE_KEYS) p.scopes[k].enabled = false;
+  for (const mode of ['cb', 'ocb']) {
+    const r = buildHexPrompt(p, mode);
+    assert.equal(r.text, '');
+    assert.equal(r.parts.length, 0);
+  }
+  // 有効でも色が空・無効な色だけの系統は行を出さない
+  const q = samplePalette();
+  q.scopes.character.colors = [{ id: 'x', hex: 'nope', ratio: 100 }];
+  const r = buildHexPrompt(q, 'cb');
+  assert.equal(r.text, 'background palette: #142B29, #70A996');
+  assert.deepEqual(r.skipped, ['character']);
+  for (const t of [r.text, buildHexPrompt(samplePalette(), 'ocb').text]) {
+    assert.ok(!/,\s*(,|$)/m.test(t), '余分なカンマ');
+    assert.ok(!/:\s*$/m.test(t), 'ラベルだけの行');
+    assert.ok(!/\n\n|^\n|\n$/.test(t), '空行');
+  }
+});
+
+test('ラベル付き: 色数は既存設定どおり・並び順のまま・比率なし（10色＋1色）', () => {
+  const p = samplePalette();
+  p.scopes.character.colors = equalize(10).map((r, i) => ({ id: 'c' + i, hex: '#00000' + i, ratio: r }));
+  p.scopes.background.colors = [{ id: 'b', hex: '#123456', ratio: 100 }];
+  const r = buildHexPrompt(p, 'ocb');
+  const lines = r.text.split('\n');
+  assert.equal(lines[1], 'character palette: ' + p.scopes.character.colors.map((c) => c.hex).join(', '));
+  assert.equal(lines[2], 'background palette: #123456');
+  assert.ok(!r.text.includes('%'));
+  lines.forEach((line) => assert.match(line, LINE_RE));
+});
+
+test('画面の好み（出力方式）の保存と、壊れたデータへの耐性', () => {
+  const st = memStorage();
+  const store = createStore(st);
+  assert.deepEqual(store.loadPrefs(), {});
+  assert.ok(store.savePrefs({ hpMode: 'ocb', hpScope: 'character' }));
+  assert.deepEqual(createStore(st).loadPrefs(), { hpMode: 'ocb', hpScope: 'character' });
+  for (const junk of ['{broken', '"text"', '[1,2]', 'null']) {
+    st.setItem('nyuri-cpw:v1:prefs', junk);
+    assert.deepEqual(createStore(st).loadPrefs(), {});
+  }
+  // 好みの保存は、保存済みパレットや下書きに影響しない
+  const s2 = createStore(memStorage());
+  s2.upsert(createPalette('X'));
+  s2.savePrefs({ hpMode: 'cb' });
+  assert.deepEqual(s2.loadLibrary().map((p) => p.name), ['X']);
 });

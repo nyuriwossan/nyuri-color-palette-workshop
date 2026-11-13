@@ -510,6 +510,97 @@ def run_hex_prompt_enable(browser, base):
     ctx.close()
 
 
+def run_hex_prompt_modes(browser, base):
+    """HEXプロンプトの3方式（320px幅で確認）"""
+    print("\n== HEXプロンプト：3つの出力方式（320px） ==")
+    W = 320
+    ctx = browser.new_context(viewport={"width": W, "height": 568}, has_touch=True, is_mobile=True,
+                              permissions=["clipboard-read", "clipboard-write"])
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    page.wait_for_selector("#chips .chip")
+    hexes = {}
+    for k in ["overall", "character", "background"]:
+        page.locator(f'.tab[data-scope="{k}"]').tap()
+        hexes[k] = ", ".join(h for h, _ in chips(page))
+    page.locator('.tab[data-scope="character"]').tap()
+    page.locator("#scopeSwitch").tap()  # Character を出力に含める。Background は出力しないのまま
+    page.locator('.tab[data-scope="overall"]').tap()
+
+    mode = lambda: page.eval_on_selector('.hp-modes [aria-checked="true"]', "e => e.dataset.mode")
+    text = lambda: page.inner_text("#hexPromptText")
+    badges = lambda: page.eval_on_selector_all(".tab-badge", "e => e.map(x => x.textContent)")
+    def no_overflow():
+        return page.evaluate("Math.max(document.documentElement.scrollWidth, document.querySelector('.sheet-body').scrollWidth)") <= W
+
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector(".hp-modes")
+    check("初期の出力方式は「HEXのみ」（既存方式）", mode() == "hex" and text() == hexes["overall"])
+    check("方式ボタンは3つ・押しやすい高さ", page.locator(".hp-modes button").count() == 3 and
+          min(page.eval_on_selector_all(".hp-modes button", "e => e.map(x => x.getBoundingClientRect().height)")) >= 44)
+
+    page.locator('.hp-modes [data-mode="cb"]').tap()
+    check("② 人物＋背景：切替で即座にプレビューが変わる（Background無効なので1行）",
+          mode() == "cb" and text() == "character palette: " + hexes["character"], repr(text()))
+    check("② 一部だけの出力であることを表示", page.locator(".hp-partial").is_visible() and "背景" in page.inner_text(".hp-partial"))
+    check("② Overallは表示・出力に含まれない", page.locator('.hp-row[data-scope="overall"]').count() == 0 and "overall" not in text())
+    check("② 無効な系統の行に「出力に含める」ボタン", page.locator('.hp-row-enable[data-scope="background"]').is_visible())
+    page.locator('.hp-row-enable[data-scope="background"]').tap()
+    expect_cb = f"character palette: {hexes['character']}\nbackground palette: {hexes['background']}"
+    check("② 有効化すると2行になり、仕様の形式と一致", text() == expect_cb and page.locator(".hp-partial").count() == 0, repr(text()))
+    check("② 有効化は編集画面のスイッチにも反映", badges() == ["ON", "ON", "ON"])
+    check("② 配色帯は出力する系統ぶん・色数も一致",
+          page.locator(".hp-row .hp-band").count() == 2 and
+          page.locator('.hp-row[data-scope="character"] .hp-band span').count() == len(hexes["character"].split(", ")))
+    page.locator("#btnHexPromptCopy").tap()
+    page.wait_for_timeout(150)
+    check("② 全文コピー（改行含む）が表示と一致", page.evaluate("navigator.clipboard.readText()") == expect_cb)
+    check("② 横にはみ出さない", no_overflow())
+    if SHOTS:
+        page.screenshot(path=os.path.join(SHOTS, "hexprompt_cb_320.png"))
+
+    page.locator('.hp-modes [data-mode="ocb"]').tap()
+    expect_ocb = f"overall color scheme: {hexes['overall']}\n{expect_cb}"
+    check("③ 全体＋人物＋背景：3行・この順番", mode() == "ocb" and text() == expect_ocb, repr(text()))
+    check("③ 配色帯3本", page.locator(".hp-row .hp-band").count() == 3)
+    page.locator("#btnHexPromptCopy").tap()
+    page.wait_for_timeout(150)
+    check("③ 全文コピーが表示と一致", page.evaluate("navigator.clipboard.readText()") == expect_ocb)
+    check("③ 横にはみ出さない", no_overflow())
+    if SHOTS:
+        page.screenshot(path=os.path.join(SHOTS, "hexprompt_ocb_320.png"), full_page=False)
+
+    page.locator(".sheet-head .btn").last.click()
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector(".hp-modes")
+    check("選んだ方式を開き直しても保持", mode() == "ocb")
+    page.reload()
+    page.wait_for_selector("#chips .chip")
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector(".hp-modes")
+    check("選んだ方式を再読み込み後も保持", mode() == "ocb" and text() == expect_ocb)
+    page.locator(".sheet-head .btn").last.click()
+
+    # すべて「出力しない」にしたとき
+    for k in ["overall", "character", "background"]:
+        page.locator(f'.tab[data-scope="{k}"]').tap()
+        page.locator("#scopeSwitch").tap()
+    check("（準備）3系統とも出力しない", badges() == ["OFF", "OFF", "OFF"])
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector(".hp-modes")
+    for m in ["ocb", "cb", "hex"]:
+        page.locator(f'.hp-modes [data-mode="{m}"]').tap()
+        check(f"出力対象なし（{m}）：コピー不可・理由を表示・文字列なし",
+              page.locator("#btnHexPromptCopy").is_disabled() and page.locator("#hexPromptEmpty").is_visible() and
+              page.locator("#hexPromptText").count() == 0 and len(page.inner_text("#hexPromptEmpty")) > 10)
+    check("「HEXのみ」に戻すと従来の系統選択が出る", page.locator(".hp-scopes").is_visible() and page.locator(".hp-rows").count() == 0)
+    page.locator(".sheet-head .btn").last.click()
+    check("例外なし", not errors, "; ".join(errors)[:300])
+    ctx.close()
+
+
 def chips_safe(page):
     try:
         return valid(page)
@@ -571,6 +662,7 @@ def main():
         run_mobile(browser, base, 320, 568, full=False)
         run_mobile(browser, base, 430, 740, full=False)
         run_hex_prompt_enable(browser, base)
+        run_hex_prompt_modes(browser, base)
         run_fallbacks(browser, base)
         run_desktop(browser, base)
         browser.close()

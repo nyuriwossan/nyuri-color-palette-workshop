@@ -1,5 +1,5 @@
 // テキスト・PNG出力
-import { SCOPES, APP_NAME } from './config.js';
+import { SCOPES, SCOPE_KEYS, APP_NAME } from './config.js';
 import { textOn, normalizeHex } from './color.js';
 
 export function enabledScopes(palette) {
@@ -25,6 +25,38 @@ export function hexPromptColors(palette, scopeKey) {
 }
 export function toHexPrompt(palette, scopeKey) {
   return hexPromptColors(palette, scopeKey).join(', ');
+}
+
+/** HEX配色プロンプトの出力方式。scopes が null のものは「1系統を選んでHEXだけ」。 */
+export const HEX_PROMPT_MODES = [
+  { key: 'hex', label: 'HEXのみ', sub: '割り当てはAI任せ', scopes: null },
+  { key: 'cb', label: '人物＋背景', sub: 'ラベル付き', scopes: ['character', 'background'] },
+  { key: 'ocb', label: '全体＋人物＋背景', sub: 'ラベル付き', scopes: ['overall', 'character', 'background'] },
+];
+export const HEX_PROMPT_LABELS = {
+  overall: 'overall color scheme',
+  character: 'character palette',
+  background: 'background palette',
+};
+
+/**
+ * 出力方式に応じたHEXプロンプトを組み立てる。
+ * 戻り値: { mode, targets: 対象系統, parts: [{key, label, hexes}], skipped: 出力しない等で外した系統, text }
+ * ラベル付き方式は「ラベル: #A, #B」を系統ごとに改行。空の行・余分なカンマは出さない。
+ */
+export function buildHexPrompt(palette, modeKey, scopeKey) {
+  const m = HEX_PROMPT_MODES.find((x) => x.key === modeKey) || HEX_PROMPT_MODES[0];
+  const targets = m.scopes ? m.scopes.slice() : (SCOPE_KEYS.includes(scopeKey) ? [scopeKey] : []);
+  const parts = [], skipped = [];
+  for (const k of targets) {
+    const hexes = hexPromptColors(palette, k);
+    if (hexes.length) parts.push({ key: k, label: m.scopes ? HEX_PROMPT_LABELS[k] : null, hexes });
+    else skipped.push(k);
+  }
+  const text = m.scopes
+    ? parts.map((p) => `${p.label}: ${p.hexes.join(', ')}`).join('\n')
+    : (parts[0] ? parts[0].hexes.join(', ') : '');
+  return { mode: m.key, targets, parts, skipped, text };
 }
 
 /** 保存ファイル名に使える文字列へ */

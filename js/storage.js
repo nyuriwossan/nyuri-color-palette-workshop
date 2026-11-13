@@ -3,6 +3,7 @@ import { validateImport } from './palette.js';
 
 const LIB_KEY = 'nyuri-cpw:v1:library';
 const DRAFT_KEY = 'nyuri-cpw:v1:draft';
+const PREFS_KEY = 'nyuri-cpw:v1:prefs';
 
 export function createStore(storage) {
   const read = (key) => {
@@ -45,5 +46,12 @@ export function createStore(storage) {
   }
   const saveDraft = (draft) => write(DRAFT_KEY, draft);
 
-  return { loadLibrary, saveLibrary, upsert, remove, loadDraft, saveDraft };
+  /** 画面の小さな好み（HEXプロンプトの出力方式など）。中身の検証は呼び出し側で行う。 */
+  function loadPrefs() {
+    const raw = read(PREFS_KEY);
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  }
+  const savePrefs = (prefs) => write(PREFS_KEY, prefs);
+
+  return { loadLibrary, saveLibrary, upsert, remove, loadDraft, saveDraft, loadPrefs, savePrefs };
 }

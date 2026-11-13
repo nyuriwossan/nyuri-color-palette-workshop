@@ -344,7 +344,7 @@ main :is(button, input, textarea, .sl, .sv) { scroll-margin-top: calc(clamp(54px
 
 /* HEX配色プロンプト */
 .hp-open { margin: 0 0 8px; }
-.hp-lead { margin-top: 0; }
+.hp-lead { margin-top: 8px; }
 .hp-scopes { margin-top: 10px; }
 .hp-scopes button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; gap: 1px; }
 .hp-scopes button small { font-size: 9.5px; font-weight: 500; opacity: .75; }
@@ -359,3 +359,25 @@ main :is(button, input, textarea, .sl, .sv) { scroll-margin-top: calc(clamp(54px
   font-family: var(--mono); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
   -webkit-user-select: all; user-select: all;
 }
+
+/* HEX配色プロンプト：出力方式とラベル付きの行 */
+.hp-modes button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 52px; line-height: 1.25; padding: 4px 3px; }
+.hp-modes button span { white-space: normal; word-break: keep-all; overflow-wrap: anywhere; }
+.hp-modes button small { font-size: 9.5px; font-weight: 500; opacity: .75; }
+.hp-rows { display: grid; gap: 8px; margin-top: 10px; }
+.hp-row { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px 10px; }
+.hp-row.off { background: transparent; border-style: dashed; }
+.hp-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 36px; }
+.hp-row-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; font-size: 13px; }
+.hp-row-name code { font-family: var(--mono); font-size: 11px; color: var(--ink2); }
+.hp-row-count { font-size: 12px; color: var(--ink2); flex: none; }
+.hp-row-skip { font-size: 12px; color: var(--ink3); margin: 2px 0 0; }
+.hp-band.sm { height: 34px; margin-top: 6px; border-radius: 7px; }
+.hp-band.sm span { font-size: 10px; padding-bottom: 2px; }
+.hp-text { white-space: pre-wrap; }
+.hp-partial { font-size: 12px; margin: 8px 0 0; padding: 6px 10px; border-radius: 8px; background: #EFE7D6; color: #5E4A17; }
+.hp-empty { margin-top: 10px; padding: 12px; border-radius: 10px; border: 1px dashed var(--line2); font-size: 13px; color: var(--ink2); }
+.hp-text.lines { padding-top: 4px; padding-bottom: 4px; }
+.hp-line { padding: 6px 0 6px 1.4em; text-indent: -1.4em; }
+.hp-line + .hp-line { border-top: 1px dashed var(--line); }
+.hp-row-enable { flex: none; white-space: nowrap; }
