@@ -6,7 +6,7 @@ import { distribute, isValidRatios, equalize, sanitize, setRatio, maxRatio, addR
 import { HARMONY_MODES, generateHarmony, applyHarmony, VARIATIONS, applyVariation } from '../js/harmony.js';
 import { createPalette, validateImport, parseImportText, serializePalette, checkInvariants, duplicatePalette } from '../js/palette.js';
 import { PRESETS } from '../js/presets.js';
-import { toText, safeFileName } from '../js/exporter.js';
+import { toText, safeFileName, toHexPrompt, hexPromptColors } from '../js/exporter.js';
 import { createStore } from '../js/storage.js';
 import { MAX_COLORS, SCOPE_KEYS } from '../js/config.js';
 
@@ -453,4 +453,67 @@ test('下書き: 編集中の状態が復元される', () => {
   assert.deepEqual(d.palette, p);
   assert.equal(d.dirty, true);
   assert.equal(d.scope, 'character');
+});
+
+/* ---------- HEX配色プロンプト ---------- */
+
+const HEX_PROMPT_RE = /^#[0-9A-F]{6}(, #[0-9A-F]{6})*$/;
+
+test('HEX配色プロンプト: 仕様の形式（カンマ＋空白区切り）・並び順のまま・比率なし', () => {
+  const p = createPalette();
+  p.scopes.overall.colors = [['#172B4D', 40], ['#385C84', 25], ['#89A5C1', 15], ['#F2B1A3', 12], ['#E57863', 8]]
+    .map(([hex, ratio], i) => ({ id: 'c' + i, hex, ratio }));
+  const t = toHexPrompt(p, 'overall');
+  assert.equal(t, '#172B4D, #385C84, #89A5C1, #F2B1A3, #E57863');
+  assert.match(t, HEX_PROMPT_RE);
+  assert.ok(!t.includes('%') && !t.includes('\n'));
+  // 並びを変えると出力も同じ順に変わる
+  p.scopes.overall.colors.reverse();
+  assert.equal(toHexPrompt(p, 'overall'), '#E57863, #F2B1A3, #89A5C1, #385C84, #172B4D');
+});
+
+test('HEX配色プロンプト: 系統ごとに独立して出せる', () => {
+  const p = createPalette();
+  p.scopes.character.enabled = true;
+  p.scopes.background.enabled = true;
+  for (const k of SCOPE_KEYS) {
+    assert.equal(toHexPrompt(p, k), p.scopes[k].colors.map((c) => c.hex).join(', '));
+    assert.match(toHexPrompt(p, k), HEX_PROMPT_RE);
+  }
+  assert.notEqual(toHexPrompt(p, 'character'), toHexPrompt(p, 'background'));
+});
+
+test('HEX配色プロンプト: 出力しない系統・存在しない系統は出さない', () => {
+  const p = createPalette(); // 初期は Character・Background が出力しない設定
+  assert.equal(toHexPrompt(p, 'character'), '');
+  assert.equal(toHexPrompt(p, 'background'), '');
+  assert.deepEqual(hexPromptColors(p, 'character'), []);
+  for (const bad of ['', 'nope', undefined, null, '__proto__', 'constructor']) assert.equal(toHexPrompt(p, bad), '');
+  assert.equal(toHexPrompt(null, 'overall'), '');
+  assert.equal(toHexPrompt({}, 'overall'), '');
+  p.scopes.overall.enabled = 'true'; // 真偽値以外は有効扱いしない
+  assert.equal(toHexPrompt(p, 'overall'), '');
+});
+
+test('HEX配色プロンプト: 無効な色は混ぜず、表記ゆれは正規化する', () => {
+  const p = createPalette();
+  p.scopes.overall.colors = [
+    { id: 'a', hex: '#172b4d', ratio: 20 }, { id: 'b', hex: 'zzzzzz', ratio: 20 }, null,
+    { id: 'c', hex: 'ABC', ratio: 20 }, { id: 'd', ratio: 20 }, { id: 'e', hex: '#E57863', ratio: 20 },
+  ];
+  assert.equal(toHexPrompt(p, 'overall'), '#172B4D, #AABBCC, #E57863');
+  p.scopes.overall.colors = [];
+  assert.equal(toHexPrompt(p, 'overall'), '');
+});
+
+test('HEX配色プロンプト: 10色・全プリセットで形式が崩れない', () => {
+  const p = createPalette();
+  for (const pr of PRESETS) {
+    p.scopes.overall.colors = pr.colors.map(([hex, ratio], i) => ({ id: 'c' + i, hex, ratio }));
+    assert.equal(toHexPrompt(p, 'overall'), pr.colors.map((c) => c[0]).join(', '));
+  }
+  p.scopes.overall.colors = equalize(10).map((r, i) => ({ id: 'c' + i, hex: '#0000' + String(i).padStart(2, '0'), ratio: r }));
+  const t = toHexPrompt(p, 'overall');
+  assert.equal(t.split(', ').length, 10);
+  assert.match(t, HEX_PROMPT_RE);
 });

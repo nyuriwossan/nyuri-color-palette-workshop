@@ -1,6 +1,6 @@
 // テキスト・PNG出力
 import { SCOPES, APP_NAME } from './config.js';
-import { textOn } from './color.js';
+import { textOn, normalizeHex } from './color.js';
 
 export function enabledScopes(palette) {
   return SCOPES.filter((s) => palette.scopes[s.key].enabled);
@@ -11,6 +11,20 @@ export function toText(palette, { hexOnly = false } = {}) {
   return enabledScopes(palette)
     .map((s) => [s.label, ...palette.scopes[s.key].colors.map((c) => (hexOnly ? c.hex : `${c.hex} ${c.ratio}%`))].join('\n'))
     .join('\n\n');
+}
+
+/**
+ * 画像生成AIのプロンプト本文に貼るためのHEX列（PixAI・NovelAI共通）。
+ * 指定した系統の色を、パレットの並び順のまま「#AAAAAA, #BBBBBB」の形で返す。
+ * 比率は入れない。出力しない設定の系統・存在しない系統・無効な色は出さない。
+ */
+export function hexPromptColors(palette, scopeKey) {
+  const sc = palette && palette.scopes && palette.scopes[scopeKey];
+  if (!sc || sc.enabled !== true || !Array.isArray(sc.colors)) return [];
+  return sc.colors.map((c) => normalizeHex(c && c.hex)).filter(Boolean);
+}
+export function toHexPrompt(palette, scopeKey) {
+  return hexPromptColors(palette, scopeKey).join(', ');
 }
 
 /** 保存ファイル名に使える文字列へ */

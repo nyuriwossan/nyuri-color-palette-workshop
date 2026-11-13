@@ -6,7 +6,7 @@ import { HARMONY_MODES, applyHarmony, VARIATIONS, applyVariation } from './harmo
 import { createPalette, createColor, clonePalette, duplicatePalette, parseImportText, serializePalette, checkInvariants, uid, DEFAULT_NAME } from './palette.js';
 import { PRESETS } from './presets.js';
 import { createStore } from './storage.js';
-import { toText, drawPaletteCanvas, enabledScopes, safeFileName } from './exporter.js';
+import { toText, toHexPrompt, hexPromptColors, drawPaletteCanvas, enabledScopes, safeFileName } from './exporter.js';
 import { makeSlider, makeArea } from './picker.js';
 
 /* ---------- 小道具 ---------- */
@@ -782,6 +782,75 @@ function openTransfer() {
   });
 }
 
+/* ---------- HEX配色プロンプト（プロンプト本文に貼る用） ---------- */
+
+const HP_LABELS = { overall: '全体', character: 'キャラクター', background: '背景' };
+let hpScope = null; // パネルで最後に選んだ系統（開き直しても覚えておく）
+
+function openHexPrompt() {
+  openSheet('HEX配色プロンプト', (body) => {
+    let pendingOff = null; // 「出力しない」系統をタップしたときの案内
+    const pick = () => {
+      for (const k of [hpScope, S.scope]) if (k && S.palette.scopes[k].enabled) return k;
+      const first = enabledScopes(S.palette)[0];
+      return first ? first.key : null;
+    };
+    const draw = () => {
+      const key = pick();
+      const seg = h('div', { class: 'seg-ctl hp-scopes', role: 'radiogroup', 'aria-label': '出力する系統' }, SCOPES.map((s) => {
+        const on = S.palette.scopes[s.key].enabled;
+        return h('button', {
+          type: 'button', role: 'radio', 'data-scope': s.key,
+          class: (s.key === key ? 'on' : '') + (on ? '' : ' off'),
+          'aria-checked': s.key === key ? 'true' : 'false',
+          'aria-label': on ? `${HP_LABELS[s.key]}（${s.label}）` : `${HP_LABELS[s.key]}（出力しない設定。タップで案内）`,
+          onclick: () => {
+            if (!on) { pendingOff = s.key; draw(); return; }
+            hpScope = s.key; pendingOff = null; draw();
+          },
+        }, HP_LABELS[s.key], h('small', {}, on ? s.label : '出力しない'));
+      }));
+      const nodes = [
+        h('p', { class: 'note hp-lead' }, '編集中のパレットから、HEXだけをパレットの並び順でカンマ区切りにします。PixAI・NovelAIのプロンプト本文の好きな位置に貼り付けて使えます。'),
+        seg,
+      ];
+      if (pendingOff) {
+        const s = scopeDef(pendingOff);
+        nodes.push(h('div', { class: 'hp-off', role: 'status' },
+          h('span', {}, `「${HP_LABELS[s.key]}」は「出力しない」設定なので、誤って出さないよう選べなくしています。`),
+          h('button', { type: 'button', class: 'btn sm', id: 'hpEnable', onclick: () => {
+            const k = pendingOff;
+            mutate(() => { S.palette.scopes[k].enabled = true; });
+            hpScope = k; pendingOff = null; draw();
+          } }, '出力に含めて選ぶ')));
+      }
+      if (!key) {
+        nodes.push(h('p', { class: 'empty' }, '出力できる系統がありません。上のどれかをタップして「出力に含める」にしてください。'));
+        body.replaceChildren(...nodes);
+        return;
+      }
+      const hexes = hexPromptColors(S.palette, key);
+      const text = toHexPrompt(S.palette, key);
+      nodes.push(
+        h('div', { class: 'hp-band', 'aria-label': `${HP_LABELS[key]}の配色帯（${hexes.length}色・比率は反映しない均等幅）` },
+          hexes.map((hex, i) => h('span', { style: { background: hex, color: textOn(hex) } }, i + 1))),
+        h('div', { class: 'hp-meta' }, h('span', {}, `${HP_LABELS[key]}・${hexes.length}色`), h('span', {}, '比率は入りません（均等幅で表示）')),
+        h('div', { class: 'hp-text', id: 'hexPromptText', 'aria-label': 'コピーされる文字列' }, text),
+        h('button', { type: 'button', class: 'btn wide primary', id: 'btnHexPromptCopy', disabled: !text,
+          onclick: async (e) => {
+            const btn = e.currentTarget;
+            if (await copyText(text, `${HP_LABELS[key]}のHEX ${hexes.length}色をコピーしました`)) {
+              btn.textContent = 'コピーしました ✓';
+              setTimeout(() => { btn.textContent = 'この内容をコピー'; }, 1600);
+            }
+          } }, 'この内容をコピー'),
+        h('p', { class: 'note' }, '※ HEXを並べるのは、配色を誘導する実験的な使い方です。色の厳密な再現は保証されません。「全体・キャラクター・背景」は工房内の整理用の区分で、貼っても人物や背景にだけ効くとは限りません。'));
+      body.replaceChildren(...nodes);
+    };
+    draw();
+  });
+}
+
 function openPng() {
   const cv = drawPaletteCanvas(S.palette);
   if (!cv) { toast('出力する系統がありません。「出力に含める」をオンにしてください。', 'warn'); return; }
@@ -1004,6 +1073,7 @@ function initEvents() {
   $('btnSuggest').addEventListener('click', openSuggest);
 
   $('btnTransfer').addEventListener('click', openTransfer);
+  $('btnHexPrompt').addEventListener('click', openHexPrompt);
   $('btnCopyAll').addEventListener('click', () => copyText(toText(S.palette), 'HEXと比率をコピーしました'));
   $('btnCopyHexes').addEventListener('click', () => copyText(toText(S.palette, { hexOnly: true }), 'HEXコードをコピーしました'));
   $('btnPng').addEventListener('click', openPng);

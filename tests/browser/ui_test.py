@@ -99,7 +99,7 @@ def run_mobile(browser, base, width, height, full):
             page.locator("#btnAdd").tap()
         check("10色でも横スクロールなし", page.evaluate("document.documentElement.scrollWidth") <= width)
         check("10色: 合計100%", len(chips(page)) == 10 and valid(page))
-        for opener in ["#btnSuggest", "#btnTransfer", "#btnPresets", "#btnMenu"]:
+        for opener in ["#btnSuggest", "#btnTransfer", "#btnHexPrompt", "#btnPresets", "#btnMenu"]:
             page.locator(opener).tap()
             page.wait_for_selector(".sheet")
             w = page.evaluate("Math.max(document.documentElement.scrollWidth, document.querySelector('.sheet-body').scrollWidth)")
@@ -259,6 +259,7 @@ def run_mobile(browser, base, width, height, full):
     page.wait_for_timeout(150)
     check("個別HEXコピー", page.evaluate("navigator.clipboard.readText()") == chips(page)[page.evaluate("[...document.querySelectorAll('#chips .chip')].findIndex(e => e.getAttribute('aria-pressed') === 'true')")][0])
     check("コピー成功の通知が出る", page.locator(".toast").count() >= 1)
+    run_hex_prompt(page, clip, width)
     page.locator("#btnTransfer").tap()
     page.wait_for_selector(".tr-row")
     page.locator(".tr-row").nth(0).tap()
@@ -442,6 +443,73 @@ def run_mobile(browser, base, width, height, full):
     ctx.close()
 
 
+def run_hex_prompt(page, hex_only_clip, width):
+    """HEX配色プロンプトのパネル。hex_only_clip は「HEXだけコピー」の結果（系統ごとの正解に使う）"""
+    sections = {}
+    for block in hex_only_clip.split("\n\n"):
+        lines = block.split("\n")
+        sections[lines[0].lower()] = ", ".join(lines[1:])
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector("#hexPromptText")
+    sel = lambda: page.eval_on_selector('.hp-scopes [aria-checked="true"]', "e => e.dataset.scope")
+    text = lambda: page.inner_text("#hexPromptText").strip()
+    check("HEXプロンプト: 初期選択は編集中の系統（Character）", sel() == "character", sel())
+    check("HEXプロンプト: Characterの出力が並び順どおり・カンマ区切り", text() == sections["character"], text())
+    check("HEXプロンプト: 形式（#RRGGBB, #RRGGBB …）・比率なし", re.fullmatch(r"#[0-9A-F]{6}(, #[0-9A-F]{6})*", text()) is not None and "%" not in text())
+    n = len(sections["character"].split(", "))
+    check("HEXプロンプト: 配色帯の色数と順番が出力と一致",
+          page.locator(".hp-band span").count() == n and
+          [rgb_to_hex(x) for x in page.eval_on_selector_all(".hp-band span", "e => e.map(x => getComputedStyle(x).backgroundColor)")] == sections["character"].split(", "))
+    page.locator('.hp-scopes [data-scope="overall"]').tap()
+    check("HEXプロンプト: 全体に切り替え", sel() == "overall" and text() == sections["overall"], text())
+    page.locator('.hp-scopes [data-scope="background"]').tap()
+    check("HEXプロンプト: 出力しない系統（背景）は選ばれず、案内が出る",
+          sel() == "overall" and text() == sections["overall"] and page.locator(".hp-off").is_visible() and
+          "off" in page.locator('.hp-scopes [data-scope="background"]').get_attribute("class"))
+    page.locator("#btnHexPromptCopy").tap()
+    page.wait_for_timeout(150)
+    check("HEXプロンプト: コピー内容が表示と一致", page.evaluate("navigator.clipboard.readText()") == sections["overall"])
+    w = page.evaluate("Math.max(document.documentElement.scrollWidth, document.querySelector('.sheet-body').scrollWidth)")
+    check("HEXプロンプト: パネルが横にはみ出さない", w <= width, str(w))
+    if SHOTS:
+        page.screenshot(path=os.path.join(SHOTS, f"hexprompt_{width}.png"))
+    page.locator(".sheet-head .btn").last.click()
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector("#hexPromptText")
+    check("HEXプロンプト: 開き直しても最後に選んだ系統を覚えている", sel() == "overall")
+    page.locator(".sheet-head .btn").last.click()
+    check("HEXプロンプト: 操作後も既存の有効・無効設定は不変",
+          page.eval_on_selector_all(".tab-badge", "e => e.map(x => x.textContent)") == ["ON", "ON", "OFF"])
+
+
+def run_hex_prompt_enable(browser, base):
+    """「出力しない」系統を、パネル内から出力に含めて選べるか（別の状態で確認）"""
+    print("\n== HEXプロンプト：出力しない系統を有効にする ==")
+    ctx = browser.new_context(viewport={"width": 320, "height": 568}, has_touch=True, is_mobile=True,
+                              permissions=["clipboard-read", "clipboard-write"])
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    page.wait_for_selector("#chips .chip")
+    page.locator('.tab[data-scope="background"]').tap()
+    expect = ", ".join(h for h, _ in chips(page))
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector("#hexPromptText")
+    check("初期状態では Background を選べず、全体が選ばれる",
+          page.eval_on_selector('.hp-scopes [aria-checked="true"]', "e => e.dataset.scope") == "overall")
+    page.locator('.hp-scopes [data-scope="background"]').tap()
+    page.locator("#hpEnable").tap()
+    check("「出力に含めて選ぶ」で背景を出力でき、内容が一致",
+          page.inner_text("#hexPromptText").strip() == expect and
+          page.eval_on_selector_all(".tab-badge", "e => e.map(x => x.textContent)") == ["ON", "OFF", "ON"])
+    page.locator(".sheet-head .btn").last.click()
+    page.locator("#btnUndo").tap()
+    check("この有効化も「元に戻す」で戻せる", page.eval_on_selector_all(".tab-badge", "e => e.map(x => x.textContent)") == ["ON", "OFF", "OFF"])
+    check("例外なし", not errors, "; ".join(errors)[:300])
+    ctx.close()
+
+
 def chips_safe(page):
     try:
         return valid(page)
@@ -502,6 +570,7 @@ def main():
         run_mobile(browser, base, 390, 645, full=True)
         run_mobile(browser, base, 320, 568, full=False)
         run_mobile(browser, base, 430, 740, full=False)
+        run_hex_prompt_enable(browser, base)
         run_fallbacks(browser, base)
         run_desktop(browser, base)
         browser.close()

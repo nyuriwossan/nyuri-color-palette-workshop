@@ -341,3 +341,21 @@ main :is(button, input, textarea, .sl, .sv) { scroll-margin-top: calc(clamp(54px
   .grid2 .btn { font-size: 12.5px; }
   .seg-ctl button { font-size: 10.5px; white-space: nowrap; letter-spacing: -.02em; }
 }
+
+/* HEX配色プロンプト */
+.hp-open { margin: 0 0 8px; }
+.hp-lead { margin-top: 0; }
+.hp-scopes { margin-top: 10px; }
+.hp-scopes button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; gap: 1px; }
+.hp-scopes button small { font-size: 9.5px; font-weight: 500; opacity: .75; }
+.hp-scopes button.off { opacity: .45; }
+.hp-off { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #EFE7D6; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hp-off span { flex: 1 1 180px; }
+.hp-band { display: flex; height: 52px; margin-top: 12px; border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+.hp-band span { flex: 1 1 0; min-width: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; font-size: 11px; font-weight: 700; box-shadow: inset -1px 0 0 rgba(0,0,0,.18); }
+.hp-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--ink2); margin-top: 4px; }
+.hp-text {
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #fff; border: 1px solid var(--line2);
+  font-family: var(--mono); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere;
+  -webkit-user-select: all; user-select: all;
+}
