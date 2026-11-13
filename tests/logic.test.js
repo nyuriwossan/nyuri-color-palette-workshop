@@ -5,7 +5,7 @@ import { normalizeHex, hexToRgb, rgbToHex, hexToHsv, hsvToHex, rgbToHsl, hslToRg
 import { distribute, isValidRatios, equalize, sanitize, setRatio, maxRatio, addRatio, removeRatio, moveBoundary } from '../js/ratio.js';
 import { HARMONY_MODES, generateHarmony, applyHarmony, VARIATIONS, applyVariation } from '../js/harmony.js';
 import { createPalette, validateImport, parseImportText, serializePalette, checkInvariants, duplicatePalette } from '../js/palette.js';
-import { PRESETS } from '../js/presets.js';
+import { PRESETS, PRESET_CATEGORIES, presetsIn } from '../js/presets.js';
 import { toText, safeFileName, toHexPrompt, hexPromptColors, buildHexPrompt, HEX_PROMPT_MODES } from '../js/exporter.js';
 import { createStore } from '../js/storage.js';
 import { MAX_COLORS, SCOPE_KEYS } from '../js/config.js';
@@ -265,13 +265,69 @@ test('バリエーション: ロック尊重・明るめは輝度が上がり暗
 
 /* ---------- プリセット ---------- */
 
-test('プリセット: 12種・HEXと比率がすべて有効・名前が重複しない', () => {
-  assert.equal(PRESETS.length, 12);
-  assert.equal(new Set(PRESETS.map((p) => p.name)).size, 12);
+// 初期の12種（v1.0）。名前・説明・HEX・比率・並び順を変えないことの確認用
+const ORIGINAL_12 = [["薄紅の肖像","くすみピンクと青灰色。静かな肖像画の空気。",[["#F3E7E0",35],["#E3B7B9",25],["#C98B95",15],["#A9B4C6",15],["#5E6B82",10]]],["真夜中の薔薇","紺・紫・ワインレッド。夜に沈む花。",[["#14182E",35],["#2C2350",25],["#5B2A5E",15],["#8C1F3F",15],["#D9A7B0",10]]],["毒花の王冠","深緑・翡翠・金。妖しい気品。",[["#0F2A22",35],["#1F5B45",25],["#3FA58A",20],["#C9A44A",12],["#F2E6C2",8]]],["冬の硝子","氷色・淡青・白。澄んだ冷たさ。",[["#F5FAFC",35],["#D6ECF3",25],["#A9D3E6",20],["#7FA8C9",12],["#4E6E8E",8]]],["蜜色の午後","蜂蜜色・生成り・琥珀。遅い午後の光。",[["#F6EBD3",35],["#EBC66E",25],["#D99A2B",20],["#A8651C",12],["#5A3A1E",8]]],["月下の藤","藤紫・銀・紺。月明かりの花房。",[["#1D2145",30],["#4B4A8A",22],["#9C8CC9",22],["#C9C2E3",14],["#D5D8DE",12]]],["古い洋館","焦茶・深紅・燻金。埃をかぶった調度。",[["#2E1F18",35],["#5A3A2A",25],["#7A1E22",15],["#A98B4E",15],["#D9CBB0",10]]],["海底庭園","青緑・深青・珊瑚色。水の底の庭。",[["#0B2A4A",30],["#0F5D73",25],["#2FA5A0",20],["#9ADBC9",13],["#F08A7B",12]]],["桃霞","桜色・乳白・薄紫。春のかすみ。",[["#FBF3EE",30],["#F9D5DC",25],["#F2B3C4",20],["#D9C5E8",15],["#B79FCF",10]]],["夜明けの鉱石","藍・群青・橙。夜と朝の境目。",[["#1B2A5C",30],["#2F4FA8",22],["#6C7FD1",16],["#F2A15C",18],["#FBD9A6",14]]],["退廃の舞台","黒・臙脂・金。幕が下りたあとの劇場。",[["#0E0C0D",40],["#3A0F19",22],["#7B1E2B",18],["#B8923E",12],["#E8D9A8",8]]],["パステルキャンディ","淡い多色。甘くて軽い。",[["#FFD6E0",22],["#FFEFB5",20],["#C9F2D8",20],["#BFE3FF",20],["#DCCBFF",18]]]];
+
+test('プリセット: 合計32種（オリジナル12＋通常12＋ダークファンタジー8）', () => {
+  assert.equal(PRESETS.length, 32);
+  const count = (k) => PRESETS.filter((p) => p.cat === k).length;
+  assert.deepEqual(PRESET_CATEGORIES.map((c) => [c.key, count(c.key)]),
+    [['original', 12], ['classical', 3], ['muted', 3], ['vivid', 3], ['scene', 3], ['darkfantasy', 8]]);
+  assert.deepEqual(PRESET_CATEGORIES.map((c) => c.label), ['オリジナル', 'クラシカル', '低彩度', '高彩度', '情景', 'ダークファンタジー']);
+});
+
+test('プリセット: 既存12種は名前・説明・HEX・比率・順番とも変わっていない', () => {
+  assert.deepEqual(PRESETS.slice(0, 12).map((p) => [p.name, p.desc, p.colors]), ORIGINAL_12);
+  assert.ok(PRESETS.slice(0, 12).every((p) => p.cat === 'original'));
+});
+
+test('プリセット: すべて有効（HEXの誤記なし・比率は整数で合計100・各1%以上・説明あり）', () => {
   for (const p of PRESETS) {
-    assert.ok(p.desc.length > 0);
-    assert.ok(isValidRatios(p.colors.map((c) => c[1])), p.name);
-    p.colors.forEach(([hex]) => assert.equal(normalizeHex(hex), hex, p.name));
+    assert.ok(PRESET_CATEGORIES.some((c) => c.key === p.cat), p.name + ' の分類');
+    assert.ok(typeof p.desc === 'string' && p.desc.length > 4 && p.desc.length <= 40, p.name + ' の説明');
+    assert.ok(p.colors.length >= 1 && p.colors.length <= MAX_COLORS, p.name);
+    assert.ok(isValidRatios(p.colors.map((c) => c[1])), p.name + ' の比率');
+    p.colors.forEach(([hex]) => {
+      assert.match(hex, /^#[0-9A-F]{6}$/, p.name + ' ' + hex);
+      assert.equal(normalizeHex(hex), hex);
+    });
+  }
+  PRESETS.slice(12).forEach((p) => assert.equal(p.colors.length, 5, p.name + ' は5色'));
+});
+
+test('プリセット: 名前の重複・同じ配色の重複・プリセット内の色の重複がない', () => {
+  assert.equal(new Set(PRESETS.map((p) => p.name)).size, PRESETS.length);
+  assert.equal(new Set(PRESETS.map((p) => p.colors.map((c) => c[0]).join())).size, PRESETS.length);
+  for (const p of PRESETS) assert.equal(new Set(p.colors.map((c) => c[0])).size, p.colors.length, p.name);
+});
+
+test('プリセット: 追加分の配色・比率が指定どおり（抜き取り）', () => {
+  const get = (n) => PRESETS.find((p) => p.name === n);
+  assert.deepEqual(get('白磁の戴冠').colors, [['#FAF7ED', 35], ['#DFD7C8', 25], ['#BC9F62', 20], ['#756044', 12], ['#252C38', 8]]);
+  assert.deepEqual(get('朱色の祭り').colors.map((c) => c[1]), [25, 20, 25, 18, 12]);
+  assert.deepEqual(get('青と檸檬').colors.map((c) => c[1]), [25, 25, 20, 20, 10]);
+  assert.deepEqual(get('青磁の庭').colors.map((c) => c[0]), ['#1A3B42', '#427A7D', '#8FB4AE', '#D1D9C9', '#F1EBDC']);
+  assert.deepEqual(get('白銀の葬列').colors, [['#F4F4F0', 30], ['#D9DFE5', 25], ['#AEBBC9', 20], ['#728299', 15], ['#293749', 10]]);
+  presetsIn('darkfantasy').forEach((p) => assert.deepEqual(p.colors.map((c) => c[1]), [30, 25, 20, 15, 10], p.name));
+  assert.equal(get('鉛色の肖像').cat, 'muted');
+  assert.equal(get('ネオン残響').cat, 'vivid');
+  assert.equal(get('錆の機械').cat, 'scene');
+});
+
+test('プリセット: どの系統に入れてもパレットとして有効で、HEXプロンプト3方式が出力できる', () => {
+  for (const pr of PRESETS) {
+    const p = createPalette();
+    for (const k of SCOPE_KEYS) {
+      p.scopes[k].enabled = true;
+      p.scopes[k].colors = pr.colors.map(([hex, ratio], i) => ({ id: `${k}${i}`, hex, ratio, lockColor: false, lockRatio: false }));
+    }
+    assert.ok(checkInvariants(p), pr.name);
+    const hexes = pr.colors.map((c) => c[0]).join(', ');
+    assert.equal(buildHexPrompt(p, 'hex', 'character').text, hexes);
+    assert.equal(buildHexPrompt(p, 'cb').text, `character palette: ${hexes}\nbackground palette: ${hexes}`);
+    assert.equal(buildHexPrompt(p, 'ocb').text, `overall color scheme: ${hexes}\ncharacter palette: ${hexes}\nbackground palette: ${hexes}`);
+    // JSONにしても壊れない
+    assert.deepEqual(parseImportText(serializePalette(p)).palette.scopes, p.scopes);
   }
 });
 

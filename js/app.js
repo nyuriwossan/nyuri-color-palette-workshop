@@ -4,7 +4,7 @@ import { normalizeHex, hexToHsv, hsvToHex, textOn } from './color.js';
 import { setRatio, maxRatio, addRatio, removeRatio, moveBoundary, equalize } from './ratio.js';
 import { HARMONY_MODES, applyHarmony, VARIATIONS, applyVariation } from './harmony.js';
 import { createPalette, createColor, clonePalette, duplicatePalette, parseImportText, serializePalette, checkInvariants, uid, DEFAULT_NAME } from './palette.js';
-import { PRESETS } from './presets.js';
+import { PRESETS, PRESET_CATEGORIES } from './presets.js';
 import { createStore } from './storage.js';
 import { toText, buildHexPrompt, HEX_PROMPT_MODES, HEX_PROMPT_LABELS, drawPaletteCanvas, enabledScopes, safeFileName } from './exporter.js';
 import { makeSlider, makeArea } from './picker.js';
@@ -707,26 +707,55 @@ function openLibrary() {
   });
 }
 
+// プリセットの分類フィルター（選んだ分類は次回も覚えておく）
+const presetPrefs = (() => {
+  const c = store.loadPrefs().presetCat;
+  return { cat: c === 'all' || PRESET_CATEGORIES.some((x) => x.key === c) ? c : 'all' };
+})();
+
 function openPresets() {
   openSheet('プリセット', (body, close) => {
-    body.append(h('p', { class: 'note' }, `このアプリ独自の配色です（PixAI公式のプリセットではありません）。選ぶと、いま開いている「${scopeDef().label}」の配色に入ります。`));
-    for (const p of PRESETS) {
-      const cs = p.colors.map(([hex, ratio]) => ({ hex, ratio }));
-      body.append(h('button', {
-        type: 'button', class: 'preset',
-        onclick: async () => {
-          if (!(await confirmDialog(`「${scopeDef().label}」の配色を「${p.name}」で置き換えますか？\n（あとで「元に戻す」で戻せます）`, { ok: '置き換える' }))) return;
-          mutate(() => {
-            scopeData().colors = p.colors.map(([hex, ratio]) => createColor(hex, ratio));
-            S.sel[S.scope] = scopeData().colors[0].id;
-            if (S.palette.name === DEFAULT_NAME) S.palette.name = p.name;
-          });
-          close();
-          toast(`「${p.name}」を ${scopeDef().label} に入れました`);
-          window.scrollTo({ top: 0 });
-        },
-      }, stripEl(cs, 'strip preset-strip'), h('span', { class: 'preset-name' }, p.name), h('span', { class: 'preset-desc' }, p.desc)));
-    }
+    const apply = async (p) => {
+      if (!(await confirmDialog(`「${scopeDef().label}」の配色を「${p.name}」で置き換えますか？\n（あとで「元に戻す」で戻せます）`, { ok: '置き換える' }))) return;
+      mutate(() => {
+        scopeData().colors = p.colors.map(([hex, ratio]) => createColor(hex, ratio));
+        S.sel[S.scope] = scopeData().colors[0].id;
+        if (S.palette.name === DEFAULT_NAME) S.palette.name = p.name;
+      });
+      close();
+      toast(`「${p.name}」を ${scopeDef().label} に入れました`);
+      window.scrollTo({ top: 0 });
+    };
+    const card = (p) => h('button', { type: 'button', class: 'preset', 'data-cat': p.cat, onclick: () => apply(p) },
+      stripEl(p.colors.map(([hex, ratio]) => ({ hex, ratio })), 'strip preset-strip'),
+      h('span', { class: 'preset-name' }, p.name), h('span', { class: 'preset-desc' }, p.desc));
+    const draw = () => {
+      const cat = presetPrefs.cat;
+      const chips = [{ key: 'all', label: 'すべて' }, ...PRESET_CATEGORIES].map((c) => {
+        const n = c.key === 'all' ? PRESETS.length : PRESETS.filter((p) => p.cat === c.key).length;
+        return h('button', {
+          type: 'button', role: 'radio', class: 'pf-chip' + (c.key === cat ? ' on' : ''), 'data-cat': c.key,
+          'aria-checked': c.key === cat ? 'true' : 'false', 'aria-label': `${c.label}（${n}種）`,
+          onclick: () => {
+            if (presetPrefs.cat === c.key) return;
+            presetPrefs.cat = c.key;
+            store.savePrefs({ ...store.loadPrefs(), presetCat: c.key });
+            draw();
+            body.scrollTop = 0;
+          },
+        }, h('span', { class: 'pf-label' }, c.label), h('small', {}, `${n}種`));
+      });
+      const groups = cat === 'all' ? PRESET_CATEGORIES : PRESET_CATEGORIES.filter((c) => c.key === cat);
+      body.replaceChildren(
+        h('p', { class: 'note' }, `このアプリ独自の配色です（PixAI公式のプリセットではありません）。選ぶと、いま開いている「${scopeDef().label}」の配色に入ります。`),
+        h('div', { class: 'pf-filters', role: 'radiogroup', 'aria-label': 'プリセットの分類' }, chips),
+        ...groups.flatMap((g) => {
+          const list = PRESETS.filter((p) => p.cat === g.key);
+          if (!list.length) return [];
+          return [h('h4', { class: 'pf-head' }, g.label, h('span', {}, `${list.length}種`)), ...list.map(card)];
+        }));
+    };
+    draw();
   });
 }
 

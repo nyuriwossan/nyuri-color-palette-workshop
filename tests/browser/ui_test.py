@@ -363,7 +363,7 @@ def run_mobile(browser, base, width, height, full):
     # ---- プリセット ----
     page.locator("#btnPresets").tap()
     page.wait_for_selector(".preset")
-    check("プリセット12種", page.locator(".preset").count() == 12)
+    check("プリセット32種（分類「すべて」）", page.locator(".preset").count() == 32)
     page.locator(".preset").nth(1).tap()
     page.wait_for_selector(".dialog")
     check("プリセット適用前に確認が出る", page.locator(".dialog").is_visible())
@@ -601,6 +601,85 @@ def run_hex_prompt_modes(browser, base):
     ctx.close()
 
 
+def run_presets(browser, base, W, H):
+    """プリセットの分類フィルター・追加分の適用・HEXプロンプトとの連携"""
+    print(f"\n== プリセット（{W}px） ==")
+    ctx = browser.new_context(viewport={"width": W, "height": H}, has_touch=True, is_mobile=True,
+                              permissions=["clipboard-read", "clipboard-write"])
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    page.wait_for_selector("#chips .chip")
+    def no_overflow():
+        return page.evaluate("Math.max(document.documentElement.scrollWidth, document.querySelector('.sheet-body').scrollWidth)") <= W
+    page.locator("#btnPresets").tap()
+    page.wait_for_selector(".pf-filters")
+    check(f"[{W}] 分類フィルター7つ（すべて＋6分類）・初期は「すべて」",
+          page.locator(".pf-chip").count() == 7 and page.eval_on_selector('.pf-chip[aria-checked="true"]', "e => e.dataset.cat") == "all")
+    check(f"[{W}] 「すべて」で32種・分類見出し6つ", page.locator(".preset").count() == 32 and page.locator(".pf-head").count() == 6)
+    heights = page.eval_on_selector_all(".pf-chip", "e => e.map(x => x.getBoundingClientRect().height)")
+    check(f"[{W}] 分類ボタンが押しやすい大きさ（44px以上）", min(heights) >= 44, str(heights))
+    labels_fit = page.eval_on_selector_all(".pf-label", "e => e.every(x => x.scrollWidth <= x.clientWidth + 1)")
+    check(f"[{W}] 分類名がボタンからはみ出さない", labels_fit)
+    check(f"[{W}] 横にはみ出さない", no_overflow())
+    expect = {"original": 12, "classical": 3, "muted": 3, "vivid": 3, "scene": 3, "darkfantasy": 8}
+    ok = True
+    for cat, n in expect.items():
+        page.locator(f'.pf-chip[data-cat="{cat}"]').tap()
+        cats = set(page.eval_on_selector_all(".preset", "e => e.map(x => x.dataset.cat)"))
+        ok = ok and page.locator(".preset").count() == n and cats == {cat}
+    check(f"[{W}] 分類ごとの件数と中身が正しい", ok)
+    if SHOTS:
+        page.screenshot(path=os.path.join(SHOTS, f"presets_dark_{W}.png"))
+    page.locator(".sheet-head .btn").last.click()
+
+    # Character に「鮮血の女王」を入れて、HEXプロンプト（人物＋背景）に出るか
+    page.locator('.tab[data-scope="character"]').tap()
+    page.locator("#scopeSwitch").tap()
+    page.locator("#btnPresets").tap()
+    page.wait_for_selector(".pf-filters")
+    check(f"[{W}] 選んだ分類を次に開いたときも保持", page.eval_on_selector('.pf-chip[aria-checked="true"]', "e => e.dataset.cat") == "darkfantasy")
+    page.locator(".preset", has_text="鮮血の女王").tap()
+    page.locator(".dialog [data-ok]").tap()
+    page.wait_for_timeout(150)
+    blood = [("#24090E", 30), ("#650E23", 25), ("#B51E35", 20), ("#E35A66", 15), ("#E9C1B1", 10)]
+    check(f"[{W}] ダークファンタジーのプリセットをCharacterに適用", chips(page) == blood and valid(page), str(chips(page)))
+    page.locator('.tab[data-scope="background"]').tap()
+    page.locator("#scopeSwitch").tap()
+    page.locator("#btnPresets").tap()
+    page.locator('.pf-chip[data-cat="scene"]').tap()
+    page.locator(".preset", has_text="青磁の庭").tap()
+    page.locator(".dialog [data-ok]").tap()
+    page.wait_for_timeout(150)
+    page.locator('.tab[data-scope="overall"]').tap()
+    overall = ", ".join(h for h, _ in chips(page))
+    check(f"[{W}] Overallは変わらない（系統ごとに独立）", overall.startswith("#F3E7E0"))
+    page.locator("#btnHexPrompt").tap()
+    page.wait_for_selector(".hp-modes")
+    char_hex = ", ".join(h for h, _ in blood)
+    bg_hex = "#1A3B42, #427A7D, #8FB4AE, #D1D9C9, #F1EBDC"
+    page.locator('.hp-modes [data-mode="cb"]').tap()
+    t_cb = page.inner_text("#hexPromptText")
+    page.locator('.hp-modes [data-mode="ocb"]').tap()
+    t_ocb = page.inner_text("#hexPromptText")
+    page.locator('.hp-modes [data-mode="hex"]').tap()
+    page.locator('.hp-scopes [data-scope="character"]').tap()
+    t_hex = page.inner_text("#hexPromptText")
+    check(f"[{W}] プリセット適用後もHEXプロンプト3方式が正しく出力",
+          t_hex == char_hex and t_cb == f"character palette: {char_hex}\nbackground palette: {bg_hex}" and
+          t_ocb == f"overall color scheme: {overall}\ncharacter palette: {char_hex}\nbackground palette: {bg_hex}", repr((t_hex, t_cb, t_ocb)))
+    page.locator(".sheet-head .btn").last.click()
+    page.locator("#btnUndo").tap()
+    page.locator('.tab[data-scope="background"]').tap()
+    check(f"[{W}] プリセット適用は「元に戻す」で戻せる", chips(page)[0][0] != "#1A3B42")
+    page.locator("#btnRedo").tap()
+    page.locator('.tab[data-scope="background"]').tap()
+    check(f"[{W}] 「やり直す」で再適用", chips(page)[0][0] == "#1A3B42")
+    check(f"[{W}] 例外なし", not errors, "; ".join(errors)[:300])
+    ctx.close()
+
+
 def chips_safe(page):
     try:
         return valid(page)
@@ -663,6 +742,8 @@ def main():
         run_mobile(browser, base, 430, 740, full=False)
         run_hex_prompt_enable(browser, base)
         run_hex_prompt_modes(browser, base)
+        for w, hgt in [(320, 568), (390, 645), (430, 740)]:
+            run_presets(browser, base, w, hgt)
         run_fallbacks(browser, base)
         run_desktop(browser, base)
         browser.close()
