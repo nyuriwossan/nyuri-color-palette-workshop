@@ -1,0 +1,11 @@
+{
+  "name": "nyuri-color-palette-workshop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "にゅりカラーパレット工房 — PixAI Tsubaki.3 向けカラーパレット設計ツール（非公式）",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python3 -m http.server 8000"
+  }
+}

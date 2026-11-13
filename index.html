@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>にゅりカラーパレット工房</title>
+<meta name="description" content="PixAI Tsubaki.3 のカスタムカラーパレットを、色を見ながら設計できる非公式の補助ツール。無料・ログイン不要・端末内で完結。">
+<meta name="theme-color" content="#F2EFE9">
+<meta name="format-detection" content="telephone=no">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23F3E7E0'/%3E%3Crect x='5' y='9' width='8' height='14' fill='%23C98B95'/%3E%3Crect x='13' y='9' width='7' height='14' fill='%23A9B4C6'/%3E%3Crect x='20' y='9' width='7' height='14' fill='%235E6B82'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="top">
+    <div class="brand">にゅりカラーパレット工房<span class="ver">v1.0</span></div>
+    <div class="top-row">
+      <button type="button" id="btnName" class="name-btn" aria-label="パレット名とメモを編集">
+        <span id="palName" class="pal-name"></span>
+        <span id="dirtyDot" class="dirty" hidden>未保存</span>
+        <span class="pen" aria-hidden="true">✎</span>
+      </button>
+      <button type="button" id="btnSave" class="btn primary">保存</button>
+      <button type="button" id="btnMenu" class="btn" aria-label="メニューを開く">☰</button>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs" role="tablist" aria-label="編集する系統"></div>
+
+  <div class="scope-row">
+    <div class="scope-hint" id="scopeHint"></div>
+    <button type="button" id="scopeSwitch" class="switch" role="switch" aria-checked="true">
+      <span class="switch-label" id="scopeSwitchLabel">出力に含める</span>
+      <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+    </button>
+  </div>
+
+  <div class="preview" id="previewWrap">
+    <div class="bar" id="bar" aria-label="配色プレビュー（比率どおりの幅）"></div>
+  </div>
+
+  <main>
+    <section aria-label="色の一覧">
+      <div class="chips" id="chips"></div>
+    </section>
+
+    <section class="card" id="editor" aria-label="選択中の色の編集">
+      <div class="ed-head">
+        <div class="ed-swatch" id="edSwatch" aria-hidden="true"></div>
+        <div class="ed-id">
+          <div class="ed-no" id="edNo">色 1</div>
+          <button type="button" id="btnCopyHex" class="hexcopy" aria-label="このHEXコードをコピー"></button>
+        </div>
+        <div class="ed-tools">
+          <button type="button" class="btn sm" id="btnLeft" aria-label="この色を左へ移動">←</button>
+          <button type="button" class="btn sm" id="btnRight" aria-label="この色を右へ移動">→</button>
+          <button type="button" class="btn sm" id="btnDup">複製</button>
+          <button type="button" class="btn sm danger" id="btnDel">削除</button>
+        </div>
+      </div>
+
+      <div class="sv" id="sv" role="application" aria-label="彩度と明るさ。ドラッグで色を選ぶ"><div class="sv-thumb" id="svThumb"></div></div>
+
+      <div class="row"><div class="row-label">色相<span id="valH"></span></div><div class="sl" id="slH"></div></div>
+      <div class="row"><div class="row-label">彩度<span id="valS"></span></div><div class="sl" id="slS"></div></div>
+      <div class="row"><div class="row-label">明るさ<span id="valV"></span></div><div class="sl" id="slV"></div></div>
+
+      <div class="hex-row">
+        <label class="field">
+          <span class="field-label">HEXコード</span>
+          <input id="hexInput" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="9" placeholder="#RRGGBB">
+        </label>
+        <label class="native" id="nativeWrap">
+          <input id="nativeColor" type="color" aria-label="端末のカラーピッカーを開く">
+          <span>端末のピッカー</span>
+        </label>
+      </div>
+      <div class="hex-err" id="hexErr" role="alert" hidden></div>
+
+      <div class="divider"></div>
+
+      <div class="row"><div class="row-label">比率<span id="valRmax"></span></div><div class="sl ratio" id="slR"></div></div>
+      <div class="ratio-row">
+        <button type="button" class="btn sm" id="btnRminus" aria-label="比率を1%減らす">−1</button>
+        <label class="ratio-num"><input id="ratioInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" aria-label="比率（%）"><span>%</span></label>
+        <button type="button" class="btn sm" id="btnRplus" aria-label="比率を1%増やす">＋1</button>
+        <button type="button" class="chipbtn" id="btnLockRatio" aria-pressed="false">比率を固定</button>
+        <button type="button" class="chipbtn" id="btnLockColor" aria-pressed="false">色を固定</button>
+      </div>
+      <p class="note" id="lockNote">「固定」した色は、他の色を調整したときや配色提案で変わりません。</p>
+    </section>
+
+    <section class="card" aria-label="配色の操作">
+      <h2>配色の操作</h2>
+      <div class="grid3">
+        <button type="button" class="btn" id="btnAdd">＋ 色を追加</button>
+        <button type="button" class="btn" id="btnReverse">順序を反転</button>
+        <button type="button" class="btn" id="btnShuffle">並びをシャッフル</button>
+        <button type="button" class="btn" id="btnEqual">比率を均等に</button>
+        <button type="button" class="btn" id="btnUndo">↶ 元に戻す</button>
+        <button type="button" class="btn" id="btnRedo">↷ やり直す</button>
+      </div>
+      <button type="button" class="btn wide accent" id="btnSuggest">配色の提案を見る（調和・バリエーション）</button>
+    </section>
+
+    <section class="card" aria-label="デザインプレビュー">
+      <h2>見え方を確かめる</h2>
+      <div class="seg-ctl" id="pvModes" role="tablist" aria-label="プレビューの種類"></div>
+      <div class="pv-stage" id="pvStage"></div>
+      <div class="seg-ctl small" id="pvBgs" aria-label="プレビューの下地"></div>
+      <p class="note">これは配色の組み合わせを確かめるための一般的なデザイン表示です。Tsubaki.3 が生成するイラストの予測でも、PixAI の内部処理の再現でもありません。</p>
+    </section>
+
+    <section class="card" aria-label="出力">
+      <h2>PixAIへ持っていく</h2>
+      <div class="grid2">
+        <button type="button" class="btn primary" id="btnTransfer">転記チェックリスト</button>
+        <button type="button" class="btn" id="btnCopyAll">HEXと比率をコピー</button>
+        <button type="button" class="btn" id="btnCopyHexes">HEXだけコピー</button>
+        <button type="button" class="btn" id="btnPng">画像（PNG）で保存</button>
+        <button type="button" class="btn" id="btnJsonOut">JSONで保存</button>
+        <button type="button" class="btn" id="btnJsonIn">JSONを読み込む</button>
+      </div>
+      <p class="note"><b>PNG</b>は見返したり共有したりするための画像、<b>JSON</b>はこのアプリに読み込み直せるバックアップです。JSONはこのアプリ独自の形式で、PixAIには直接読み込めません。PixAIへは、HEXと比率を公式画面に手で入力してください。</p>
+    </section>
+
+    <section class="card" aria-label="ライブラリ">
+      <h2>パレットを選ぶ・始める</h2>
+      <div class="grid3">
+        <button type="button" class="btn" id="btnLibrary">保存済み</button>
+        <button type="button" class="btn" id="btnPresets">プリセット</button>
+        <button type="button" class="btn" id="btnNew">新規作成</button>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p>PixAI の非公式補助ツールです。PixAI 運営とは関係ありません。</p>
+      <p>データはこの端末のブラウザ内だけで処理・保存されます。大事なパレットはJSONでバックアップを。</p>
+    </footer>
+  </main>
+</div>
+
+<div id="overlays"></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<noscript><p style="padding:24px">このアプリを使うには JavaScript を有効にしてください。</p></noscript>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
